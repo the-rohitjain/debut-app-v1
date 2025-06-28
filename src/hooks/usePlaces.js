@@ -18,19 +18,37 @@ export function usePlaces(activeFilter, sortBy, userLocation) {
 
   const fetchPlaces = useCallback(
     async (reset = false) => {
-      if (!userLocation) return;
+      if (!userLocation) {
+        console.warn("⚠️ Skipping fetch: No user location yet.");
+        return;
+      }
+
       if (reset) setIsInitialLoading(true);
       else setIsPaginating(true);
 
       setError(null);
 
       try {
+        console.log("🧭 Fetching places with", {
+          activeFilter,
+          sortBy,
+          userLocation,
+        });
+
         const db = getFirestore();
         const center = [userLocation.lat, userLocation.lng];
+
         const bounds = geofire.geohashQueryBounds(center, radiusInM);
         const promises = [];
 
+        console.log("✅ Geohash bounds count:", bounds.length);
+
+        const allowed = CATEGORY_MAPPING[activeFilter] || [];
+        console.log("🎯 Allowed categories:", allowed);
+
         for (const b of bounds) {
+          console.log("📦 Query bounds:", b);
+
           let q = collection(db, 'places');
           q = query(q,
             where('geohash', '>=', b[0]),
@@ -38,7 +56,6 @@ export function usePlaces(activeFilter, sortBy, userLocation) {
             limit(PAGE_SIZE)
           );
 
-          const allowed = CATEGORY_MAPPING[activeFilter] || [];
           if (activeFilter !== 'All' && allowed.length > 0) {
             q = query(q, where('category', 'in', allowed));
           }
@@ -77,10 +94,12 @@ export function usePlaces(activeFilter, sortBy, userLocation) {
           ? uniqueDocs.sort((a, b) => b.createdAt - a.createdAt)
           : uniqueDocs.sort((a, b) => a.distance - b.distance);
 
+        console.log(`✅ Places fetched: ${sortedDocs.length}`);
+
         setPlaces(reset ? sortedDocs : (prev) => [...prev, ...sortedDocs]);
         setHasMore(sortedDocs.length === PAGE_SIZE);
       } catch (err) {
-        console.error('Geohash fetch error:', err);
+        console.error('❌ Geohash fetch error:', err);
         setError('Could not load places.');
       } finally {
         setIsInitialLoading(false);
