@@ -1,13 +1,13 @@
 // File: src/AppComponents.js
 
 import React from 'react';
-import { MapPin, Star, Heart, Coffee, UtensilsCrossed, Beer, ShoppingCart, Bread } from 'lucide-react';
+import { MapPin, Star, Heart, Coffee, UtensilsCrossed, Beer, ShoppingCart, Bread, Cake } from 'lucide-react';
 import { getOpenStatus, formatTime } from './utils'; // Use correct path as needed
 
 // CATEGORY ICONS (gym removed, bakery added)
 export const categoryIcons = {
   Cafe: <Coffee size={36} className="text-amber-600" />,
-  Bakery: <Bread size={36} className="text-orange-400" />,
+  Bakery: <Cake size={36} className="text-orange-400" />,
   Restaurant: <UtensilsCrossed size={36} className="text-red-600" />,
   Bar: <Beer size={36} className="text-yellow-500" />,
   Store: <ShoppingCart size={36} className="text-blue-600" />,

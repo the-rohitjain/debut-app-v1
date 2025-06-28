@@ -1,9 +1,7 @@
-// File: App.js (enhanced for distance debugging)
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
-  getFirestore, collection, query, where, orderBy, limit, startAfter, getDocs, doc, setDoc, deleteDoc
+  getFirestore, collection, doc, setDoc, deleteDoc, getDocs
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
@@ -11,43 +9,32 @@ import LandingScreen from './screens/LandingScreen';
 import ListScreen from './screens/ListScreen';
 import WishlistScreen from './screens/WishlistScreen';
 import DetailScreen from './screens/DetailScreen';
-import { getDistance } from './utils';
 import { firebaseConfig } from './firebase';
-import { USER_LOCATION } from './config';
-
-const PAGE_SIZE = 20;
-
-const CATEGORY_MAPPING = {
-  All: [],
-  Cafe: ['Cafe', 'Bakery'],
-  Restaurant: ['Restaurant'],
-  Bar: ['Bar', 'Pub'],
-  Store: ['Store', 'Supermarket'],
-  Mall: ['Shopping_mall'],
-  Gym: ['Gym']
-};
+import { usePlaces } from './hooks/usePlaces';
+import { useUserLocation } from './hooks/useUserLocation';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('landing');
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [activeFilter, setActiveFilter] = useState('Cafe');
   const [sortBy, setSortBy] = useState('distance');
-  const [places, setPlaces] = useState([]);
-  const [lastDoc, setLastDoc] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-
   const [userId, setUserId] = useState(null);
   const [wishlistIds, setWishlistIds] = useState(new Set());
-  const [userLocation] = useState(USER_LOCATION);
+
+  const userLocation = useUserLocation();
+
+  const {
+    places,
+    isInitialLoading,
+    isPaginating,
+    hasMore,
+    error,
+    fetchMore,
+    refetch
+  } = usePlaces(activeFilter, sortBy, userLocation);
 
   useEffect(() => {
-    if (!firebaseConfig || firebaseConfig.apiKey === "YOUR_API_KEY") {
-      setError("Firebase config is missing.");
-      setIsLoading(false);
-      return;
-    }
+    if (!firebaseConfig || firebaseConfig.apiKey === "YOUR_API_KEY") return;
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -60,98 +47,12 @@ export default function App() {
         const snap = await getDocs(wishlistRef);
         setWishlistIds(new Set(snap.docs.map(doc => doc.id)));
       } else {
-        signInAnonymously(auth).catch((err) => {
-          setError("Could not authenticate.");
-          setIsLoading(false);
+        signInAnonymously(auth).catch(() => {
+          console.error("Could not authenticate.");
         });
       }
     });
   }, []);
-
-  const fetchPlaces = useCallback(async (reset = false) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const db = getFirestore();
-      let q = collection(db, 'places');
-
-      const allowed = CATEGORY_MAPPING[activeFilter] || [];
-      if (activeFilter !== 'All' && allowed.length > 0) {
-        console.log("Applying Firestore filter with categories:", allowed);
-        q = query(q, where('category', 'in', allowed));
-      }
-
-      if (sortBy === 'rating') {
-        q = query(q, orderBy('rating', 'desc'));
-      } else if (sortBy === 'added') {
-        q = query(q, orderBy('createdAt', 'desc'));
-      } else {
-        q = query(q, orderBy('coords'));
-      }
-
-      if (!reset && lastDoc) {
-        q = query(q, startAfter(lastDoc), limit(PAGE_SIZE));
-      } else {
-        q = query(q, limit(PAGE_SIZE));
-      }
-
-      const snap = await getDocs(q);
-      const docs = snap.docs.map(doc => {
-        const data = doc.data();
-        const placeLat = data.coords?.latitude;
-        const placeLng = data.coords?.longitude;
-
-        const distance = getDistance(
-          userLocation.lat,
-          userLocation.lng,
-          placeLat,
-          placeLng
-        );
-
-        console.log("Place:", doc.id);
-        console.log("Coords:", { lat: placeLat, lng: placeLng });
-        console.log("Distance from user:", distance.toFixed(2), "km");
-
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate?.() || new Date(),
-          coords: {
-            lat: placeLat,
-            lng: placeLng,
-          },
-          distance
-        };
-      });
-
-      const sortedDocs = docs.sort((a, b) => a.distance - b.distance);
-
-      if (reset) {
-        setPlaces(sortedDocs);
-      } else {
-        setPlaces(prev => [...prev, ...sortedDocs]);
-      }
-
-      setLastDoc(snap.docs[snap.docs.length - 1] || null);
-      setHasMore(snap.docs.length === PAGE_SIZE);
-      setIsLoading(false);
-    } catch (err) {
-      console.error("Firestore error:", err);
-      setError("Could not load places.");
-      setIsLoading(false);
-    }
-  }, [activeFilter, sortBy, userLocation, lastDoc]);
-
-    useEffect(() => {
-      setLastDoc(null);
-      fetchPlaces(true);
-    }, [activeFilter, sortBy]);
-
-  const handleLoadMore = () => {
-    if (hasMore && !isLoading) {
-      fetchPlaces(false);
-    }
-  };
 
   const onWishlistToggle = async (placeId, isCurrentlyWishlisted) => {
     if (!userId) return;
@@ -173,6 +74,7 @@ export default function App() {
   const handleSelectCategory = (category) => {
     setActiveFilter(category);
     setCurrentScreen('list');
+    refetch();
   };
 
   if (selectedPlace) {
@@ -193,7 +95,7 @@ export default function App() {
   if (currentScreen === 'wishlist') {
     return (
       <WishlistScreen
-        isLoading={isLoading}
+        isLoading={isInitialLoading}
         places={places}
         onSelectPlace={setSelectedPlace}
         onBack={() => setCurrentScreen('list')}
@@ -207,19 +109,26 @@ export default function App() {
   return (
     <div className="h-screen w-full font-sans bg-slate-100">
       <ListScreen
-        isLoading={isLoading}
+        isInitialLoading={isInitialLoading}
+        isPaginating={isPaginating}
         places={places}
         onSelectPlace={setSelectedPlace}
         activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
+        onFilterChange={(cat) => {
+          setActiveFilter(cat);
+          refetch();
+        }}
         sortBy={sortBy}
-        onSortChange={setSortBy}
+        onSortChange={(sort) => {
+          setSortBy(sort);
+          refetch();
+        }}
         error={error}
         wishlistIds={wishlistIds}
         onWishlistToggle={onWishlistToggle}
         onShowWishlist={() => setCurrentScreen('wishlist')}
         onBack={() => setCurrentScreen('landing')}
-        onLoadMore={handleLoadMore}
+        onLoadMore={fetchMore}
         hasMore={hasMore}
       />
     </div>

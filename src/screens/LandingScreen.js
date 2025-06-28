@@ -1,5 +1,5 @@
 import React from 'react';
-import { Coffee, UtensilsCrossed, Beer, ShoppingCart, Dumbbell } from 'lucide-react';
+import { Coffee, UtensilsCrossed, Beer, ShoppingCart, Cake } from 'lucide-react';
 import { CATEGORIES } from '../config';
 
 export function CategoryCard({ category, icon, onSelect }) {
@@ -23,7 +23,7 @@ export default function LandingScreen({ onSelectCategory }) {
     Bar: <Beer size={36} className="text-yellow-500" />,
     Store: <ShoppingCart size={36} className="text-blue-600" />,
     Mall: <ShoppingCart size={36} className="text-indigo-600" />,
-    Gym: <Dumbbell size={36} className="text-slate-600" />
+    Bakery: <Cake size={36} className="text-slate-600" />
   };
 
   return (
